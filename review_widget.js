@@ -44,11 +44,19 @@
            $('[id*="prdReview"]');
   }
 
+  /* 상품번호. 카페24는 주소를 두 가지로 쓴다.
+   *   /product/detail.html?product_no=13
+   *   /product/{상품명}/13/category/1/display/2/      ← 메인·목록에서 눌러 들어오면 이쪽
+   * 그래서 물음표 뒤만 보면 안 된다. 셋 다 시도한다. */
   function productNo() {
     var m = location.search.match(/[?&]product_no=(\d+)/);
     if (m) return m[1];
+    m = location.pathname.match(/\/product\/[^/]+\/(\d+)(?:\/|$)/);
+    if (m) return m[1];
+    var meta = $('meta[property="product:retailer_item_id"]');
+    if (meta && /^\d+$/.test(meta.content)) return meta.content;
     var input = $('input[name="product_no"]');
-    return input ? input.value : null;
+    return input && input.value ? input.value : null;
   }
 
   function css() {
