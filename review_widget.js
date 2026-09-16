@@ -61,7 +61,8 @@
 
   function css() {
     return '' +
-    '#swReview{font:14px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#222;text-align:left}' +
+    '#swReview{font:14px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#222;' +
+      'text-align:left;margin:0 0 40px}' +   /* 위쪽 여백은 #review 의 padding 이 준다 */
     '#swReview *{box-sizing:border-box}' +
     '#swReview .sw-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}' +
     '#swReview .sw-head h3{font-size:19px;margin:0}' +
@@ -211,9 +212,7 @@
       '<div class="sw-light"><img src="" alt=""></div>';
     while (modal.firstChild) document.body.appendChild(modal.firstChild);
 
-    board.parentNode.insertBefore(wrap, board);
-
-    // 기본 게시판은 DOM 에 남기고 화면에서만 가린다. '후기 쓰기' 버튼은 옮겨 온다.
+    // '후기 쓰기' 버튼은 기본 게시판 것을 그대로 가져와 쓴다 (원본을 옮기기 전에 복사해 둔다).
     var write = board.querySelector('a[href*="write"], .btnNormal[href*="write"]');
     if (write) {
       var clone = write.cloneNode(true);
@@ -221,7 +220,21 @@
       clone.textContent = '후기 쓰기';
       wrap.appendChild(clone);
     }
-    board.classList.add('sw-hidden');
+
+    // 위젯을 게시판 영역 '안쪽' 에 넣는다. 영역 자체를 감추면 '상품후기' 탭이 가리키는 위치가
+    // 어긋나 엉뚱한 데로 스크롤된다. 원래 내용은 안쪽 상자에 담아 화면에서만 가린다(검색 노출 유지).
+    //
+    // #prdReview 안에 있는 빈 div#review 는 탭이 가리키는 기준점이자 위쪽 여백(padding-top)이다.
+    // 이것까지 같이 숨기면 여백이 사라져 상세이미지와 붙고, 탭도 엉뚱한 데로 스크롤된다.
+    // 그래서 기준점은 제자리에 두고 그 뒤에 위젯을 넣는다.
+    var anchor = board.querySelector('#review');
+    var keep = document.createElement('div');
+    keep.className = 'sw-orig sw-hidden';
+    [].slice.call(board.childNodes).forEach(function (n) {
+      if (n !== anchor) keep.appendChild(n);
+    });
+    board.appendChild(wrap);
+    board.appendChild(keep);
 
     document.addEventListener('click', function (e) {
       var t = e.target;
