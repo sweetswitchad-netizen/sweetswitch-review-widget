@@ -4,9 +4,14 @@
  * 게시판 데이터는 건드리지 않는다. 화면만 바꾼다.
  *
  * 넣는 법: 스크립트태그 API 로 상품 상세 화면에만 설치 (또는 SEO 코드 입력란).
- * 데이터  : DATA_BASE + 'reviews_{카페24상품번호}.js'  (build_widget_data.py 가 만든다)
- *           카페24 파일업로더가 이미지·HTML/CSS/JS·웹폰트만 받아서 .json 이 아니라 .js 로 올린다.
- *           그 파일은 window.__SW_REVIEWS__[상품번호] 에 데이터를 넣어 둔다.
+ * 데이터  : 두 군데서 합친다.
+ *   1) 스냅샷  DATA_BASE + 'reviews_{카페24상품번호}.js'  (build_widget_data.py 가 게시판 전체로 만든다)
+ *              카페24 파일업로더가 이미지·HTML/CSS/JS·웹폰트만 받아서 .json 이 아니라 .js 로 올린다.
+ *              그 파일은 window.__SW_REVIEWS__[상품번호] 에 데이터를 넣어 둔다.
+ *   2) 실시간  스냅샷 뒤에 게시판에 들어온 글 (글번호 > maxNo).
+ *              카페24 Front API 에는 게시판 조회가 없어서(09-17 확인), 이 페이지에 들어 있는 기본 게시판
+ *              목록(최신 몇 건)에서 글번호·별점·작성일을 읽고, 글 상세 페이지를 받아 본문·사진을 읽는다.
+ *              실패하면 스냅샷만 보여준다. 글 상세를 받을 때 그 글의 조회수가 1 오른다.
  *
  * 규칙
  *  - 상품 상세가 아니면 아무것도 하지 않고 즉시 빠진다.
@@ -20,9 +25,12 @@
   // 파일업로더에 올린 파일은 카페24 이미지 서버로 서비스된다 (쇼핑몰 도메인이 아니다).
   var DATA_BASE = 'https://ecimg.cafe24img.com/pg1998b72030422016/sweetswitch12/review/';
   var PAGE = 10;                              // 팝업에서 한 번에 보여줄 수
-  var HEAD = 3;                               // 상품 페이지에 미리 보여줄 수
+  var HEAD = 5;                               // 상품 페이지에 미리 보여줄 수
   var STRIP = 5;                              // 사진 스트립 장수
-  var NOTICE = '네이버 스마트스토어에서 옮겨온 구매 후기가 포함되어 있습니다.';
+  var NOTICE = '네이버 스마트스토어 구매 후기가 포함되어 있습니다.';
+  var SHOP = '스윗스위치';
+  var LIVE_MAX = 10;                          // 실시간으로 읽을 새 글 최대 수
+  var LIVE_WAIT = 5000;                       // 실시간 읽기를 기다리는 최대 시간(ms)
 
   var state = { data: null, filter: 'all', sort: 'new', shown: PAGE };
 
@@ -74,15 +82,15 @@
     '#swReview .sw-strip{display:flex;gap:6px;margin-bottom:22px}' +
     '#swReview .sw-strip div{position:relative;flex:0 0 132px;height:132px;border-radius:8px;overflow:hidden;background:#f2f2f2;cursor:pointer}' +
     '#swReview .sw-strip img{width:100%;height:100%;object-fit:cover;display:block}' +
-    '#swReview .sw-strip .sw-more{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+    '#swReview .sw-strip .sw-more{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;' +
       'flex-direction:column;background:rgba(0,0,0,.45);color:#fff;font-size:13px;font-weight:600;line-height:1.3}' +
     /* 아래는 팝업(body 에 붙는다) 안에서도 쓰이므로 #swReview 로 묶지 않는다 */
     '.sw-item{display:flex;gap:16px;padding:18px 0;border-top:1px solid #f0f0f0;text-align:left}' +
     '.sw-item .sw-col{flex:1;min-width:0}' +
-    '.sw-who{display:flex;align-items:center;gap:8px;margin-bottom:6px}' +
+    '.sw-who{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin-bottom:6px;min-width:0}' +
     '.sw-ico{width:26px;height:26px;border-radius:50%;background:#e9e9e9;flex:0 0 26px}' +
     '.sw-rate{color:#ff4757;font-weight:700}' +
-    '.sw-id{font-size:13px;color:#555}' +
+    '.sw-id{font-size:13px;color:#555;overflow-wrap:anywhere;word-break:break-all}' +
     '.sw-date{font-size:13px;color:#8e8e8e}' +
     '.sw-tagline{font-size:13px;color:#8e8e8e;margin:4px 0 8px}' +
     '.sw-body{white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.6}' +
@@ -94,11 +102,11 @@
     '.sw-btn:hover{background:#fafafa}' +
     '#swReview .sw-write{margin-top:8px}' +
     '.sw-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}' +
-    '.sw-dim{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:9998}' +
+    '.sw-dim{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.5);display:none;z-index:9998}' +
     '.sw-dim.on{display:block}' +
-    '.sw-modal{position:fixed;inset:0;display:none;z-index:9999;align-items:center;justify-content:center;padding:20px}' +
+    '.sw-modal{position:fixed;top:0;right:0;bottom:0;left:0;display:none;z-index:9999;align-items:center;justify-content:center;padding:20px;overflow:hidden}' +
     '.sw-modal.on{display:flex}' +
-    '.sw-panel{background:#fff;border-radius:12px;width:100%;max-width:720px;max-height:90vh;display:flex;' +
+    '.sw-panel{background:#fff;border-radius:12px;width:100%;max-width:720px;min-width:0;max-height:90vh;display:flex;' +
       'flex-direction:column;overflow:hidden;font:14px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#222}' +
     '.sw-panel header{padding:18px 20px 12px;border-bottom:1px solid #f0f0f0}' +
     '.sw-panel .sw-title{display:flex;justify-content:space-between;align-items:center}' +
@@ -108,15 +116,17 @@
     '.sw-chip{border:1px solid #ddd;background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;color:#444;cursor:pointer}' +
     '.sw-chip.on{background:#222;border-color:#222;color:#fff}' +
     '.sw-sorts{margin-left:auto;display:flex;gap:6px}' +
-    '.sw-list{overflow-y:auto;padding:0 20px 20px}' +
+    '.sw-list{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding:0 20px 20px}' +
     '.sw-list .sw-item:first-child{border-top:0}' +
     '.sw-empty{padding:40px 0;text-align:center;color:#8e8e8e}' +
-    '.sw-light{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;z-index:10000;' +
+    '.sw-light{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.85);display:none;z-index:10000;' +
       'align-items:center;justify-content:center;padding:24px}' +
     '.sw-light.on{display:flex}' +
     '.sw-light img{max-width:100%;max-height:100%;object-fit:contain}' +
     '@media (max-width:640px){#swReview .sw-strip div{flex:0 0 104px;height:104px}' +
-      '#swReview .sw-thumb{flex:0 0 84px;height:84px}.sw-sorts{margin-left:0;width:100%}}';
+      '.sw-item{gap:12px}.sw-thumb{flex:0 0 76px;width:76px;height:76px}' +
+      '.sw-modal{padding:10px}.sw-panel{max-height:94vh}.sw-panel header{padding:14px 14px 10px}' +
+      '.sw-list{padding:0 14px 14px}.sw-chip{padding:5px 10px}.sw-sorts{margin-left:0;width:100%}}';
   }
 
   function itemHtml(r) {
@@ -124,10 +134,10 @@
       ? '<div class="sw-thumb"><img src="' + esc(r.photo) + '" alt="" loading="lazy"></div>' : '';
     return '<div class="sw-item"><div class="sw-col">' +
       '<div class="sw-who"><span class="sw-ico"></span>' +
-      '<span class="sw-rate">' + stars(r.rating) + r.rating + '</span>' +
+      (r.rating ? '<span class="sw-rate">' + stars(r.rating) + r.rating + '</span>' : '') +
       '<span class="sw-id">' + esc(r.writer) + '</span>' +
       '<span class="sw-date">· ' + fmtDate(r.date) + '</span></div>' +
-      '<div class="sw-tagline">네이버 스마트스토어 · ' + esc(r.kind) + '</div>' +
+      '<div class="sw-tagline">' + (r.source === 'shop' ? SHOP : '네이버 스마트스토어') + ' · ' + esc(r.kind) + '</div>' +
       '<div class="sw-body">' + esc(r.text) + '</div></div>' + thumb + '</div>';
   }
 
@@ -162,15 +172,33 @@
     $('.sw-modal').classList.add('on');
     document.body.style.overflow = 'hidden';
   }
+  /* 휴대폰에서 팝업을 보다 확대한 채 닫으면 화면이 확대된 그대로 남는다.
+   * viewport 의 maximum-scale 을 잠깐 1 로 바꿨다 되돌리면 브라우저가 배율을 1 로 맞춘다. 확대 기능은 그대로 유지된다. */
+  function resetZoom() {
+    var vv = window.visualViewport;
+    if (!vv || vv.scale <= 1.01) return;
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    var orig = meta.getAttribute('content') || '';
+    var fixed = /maximum-scale\s*=\s*[\d.]+/.test(orig)
+      ? orig.replace(/maximum-scale\s*=\s*[\d.]+/, 'maximum-scale=1.0')
+      : orig + (orig ? ', ' : '') + 'maximum-scale=1.0';
+    meta.setAttribute('content', fixed);
+    setTimeout(function () { meta.setAttribute('content', orig); }, 400);
+  }
   function closeModal() {
+    var wasOpen = $('.sw-modal').classList.contains('on');
     $('.sw-dim').classList.remove('on');
     $('.sw-modal').classList.remove('on');
     document.body.style.overflow = '';
+    if (wasOpen) resetZoom();
   }
   function closeLight() { $('.sw-light').classList.remove('on'); }
 
-  function build(board, data) {
-    var d = data, photos = d.reviews.filter(function (r) { return r.photo; });
+  /* 상품 페이지 쪽 위젯 내용. 실시간 글이 도착하면 다시 그린다. */
+  function render() {
+    var d = state.data, wrap = state.wrap;
+    var photos = d.reviews.filter(function (r) { return r.photo; });
 
     var cells = photos.slice(0, STRIP + 1).map(function (r, i) {
       var img = '<img src="' + esc(r.photo) + '" alt="" loading="lazy">';
@@ -179,12 +207,6 @@
         : '<div>' + img + '</div>';
     }).join('');
 
-    var style = document.createElement('style');
-    style.textContent = css();
-    document.head.appendChild(style);
-
-    var wrap = document.createElement('div');
-    wrap.id = 'swReview';
     wrap.innerHTML =
       '<div class="sw-head"><h3>리뷰 ' + d.count + '</h3><span class="sw-std">후기 제공 기준</span></div>' +
       '<div class="sw-score"><span class="sw-star">★</span><b>' + d.average.toFixed(2) + '</b></div>' +
@@ -192,6 +214,18 @@
       (photos.length ? '<div class="sw-strip">' + cells + '</div>' : '') +
       d.reviews.slice(0, HEAD).map(itemHtml).join('') +
       '<button class="sw-btn" data-act="all">리뷰 전체보기 (' + d.count + ')</button>';
+    if (state.write) wrap.appendChild(state.write);
+    if ($('.sw-modal.on')) drawModal();
+  }
+
+  function build(board, data) {
+    var style = document.createElement('style');
+    style.textContent = css();
+    document.head.appendChild(style);
+
+    var wrap = document.createElement('div');
+    wrap.id = 'swReview';
+    state.wrap = wrap;
 
     var modal = document.createElement('div');
     modal.innerHTML =
@@ -218,8 +252,9 @@
       var clone = write.cloneNode(true);
       clone.className = 'sw-btn sw-write';
       clone.textContent = '후기 쓰기';
-      wrap.appendChild(clone);
+      state.write = clone;
     }
+    render();
 
     // 위젯을 게시판 영역 '안쪽' 에 넣는다. 영역 자체를 감추면 '상품후기' 탭이 가리키는 위치가
     // 어긋나 엉뚱한 데로 스크롤된다. 원래 내용은 안쪽 상자에 담아 화면에서만 가린다(검색 노출 유지).
@@ -274,10 +309,108 @@
     });
   }
 
+  /* ---- 실시간: 스냅샷 뒤에 들어온 글 ---- */
+
+  /* 기본 게시판 목록에서 글번호 > maxNo 인 줄을 찾는다. PC(표)·모바일(목록) 어느 쪽이든 링크 기준으로 찾는다. */
+  function liveRows(board, maxNo) {
+    var seen = {}, rows = [];
+    [].slice.call(board.querySelectorAll('a[href*="/article/"]')).forEach(function (a) {
+      var href = a.getAttribute('href') || '';
+      var m = href.match(/[?&]no=(\d+)/) || href.match(/\/article\/[^/]+\/\d+\/(\d+)/);
+      if (!m) return;
+      var no = +m[1];
+      if (no <= maxNo || seen[no]) return;
+      seen[no] = 1;
+      var row = a.closest('tr, li') || a.parentNode;
+      if (row.querySelector('img[alt*="답변"], img[src*="ico_re"]')) return;   // 답글
+      if (row.querySelector('img[alt*="비밀"], img[src*="ico_lock"]')) return; // 비밀글
+      var rate = row.querySelector('img[alt$="점"]');
+      var date = (row.textContent.match(/\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?/) || [''])[0];
+      var who = [].slice.call(row.querySelectorAll('td, .name, .writer')).map(function (x) {
+        return x.textContent.trim();
+      }).filter(function (t) { return /\*/.test(t) && t.length < 30; })[0] || '';
+      rows.push({ no: no, href: a.href, rating: rate ? (parseInt(rate.alt, 10) || 0) : 0,
+                  date: date, writer: who });
+    });
+    return rows.slice(0, LIVE_MAX);
+  }
+
+  function textOf(el) {
+    var doc = el.ownerDocument, c = el.cloneNode(true);
+    [].slice.call(c.querySelectorAll('img, script, style')).forEach(function (x) { x.parentNode.removeChild(x); });
+    [].slice.call(c.querySelectorAll('br')).forEach(function (x) {
+      x.parentNode.replaceChild(doc.createTextNode('\n'), x);
+    });
+    [].slice.call(c.querySelectorAll('p, div, li')).forEach(function (x) {
+      x.appendChild(doc.createTextNode('\n'));
+    });
+    return c.textContent.replace(/\u00a0/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /* 글 상세 페이지 HTML → 리뷰 한 건. 네이버에서 옮긴 글은 본문 모양으로 알아본다. */
+  function parseArticle(row, htmlText) {
+    var doc = new DOMParser().parseFromString(htmlText, 'text/html');
+    var detail = doc.querySelector('.xans-board-read .detail') || doc.querySelector('.detail');
+    if (!detail) return null;                         // 권한 없음·비밀글 등
+    var img = detail.querySelector('img[src*="file_data"]') || detail.querySelector('img');
+    var photo = img ? img.getAttribute('src') : '';
+    if (photo && photo.indexOf('//') === 0) photo = 'https:' + photo;
+    var body = detail.querySelector('.fr-view') || detail;
+    var all = body.textContent || '';
+    var r = { id: String(row.no), no: row.no, rating: row.rating, date: row.date,
+              photo: photo || null, source: 'shop', kind: '구매 리뷰', writer: row.writer || '구매자' };
+    var foot = all.match(/네이버스마트스토어 구매자\s+(\S+)\s+·/);
+    if (foot) {
+      var p = body.querySelector('p[style="margin:0"]');
+      r.source = 'naver';
+      r.writer = foot[1];
+      r.kind = /한달사용/.test(all.slice(0, 60)) ? '한달사용 리뷰' : '구매 리뷰';
+      r.text = p ? textOf(p) : textOf(body);
+    } else {
+      r.text = textOf(body);
+    }
+    if (!r.date) {
+      var t = doc.querySelector('.xans-board-read .etcArea .txtNum');
+      r.date = t ? t.textContent.trim() : '';
+    }
+    return r.date ? r : null;
+  }
+
+  function loadLive(board, maxNo, done) {
+    var rows = liveRows(board, maxNo);
+    if (!rows.length || !window.fetch || !window.DOMParser) return;
+    var got = [], left = rows.length, finished = false;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      if (got.length) done(got);
+    }
+    setTimeout(finish, LIVE_WAIT);
+    rows.forEach(function (row) {
+      fetch(row.href, { credentials: 'same-origin' })
+        .then(function (res) { return res.ok ? res.text() : ''; })
+        .then(function (t) { var r = t && parseArticle(row, t); if (r) got.push(r); })
+        .catch(function () {})
+        .then(function () { if (--left === 0) finish(); });
+    });
+  }
+
+  function merge(data, extra) {
+    var have = {}, list = data.reviews.slice();
+    list.forEach(function (r) { have[r.no] = 1; });
+    extra.forEach(function (r) { if (!have[r.no]) { have[r.no] = 1; list.push(r); } });
+    list.sort(function (a, b) { return b.date.localeCompare(a.date); });
+    var scores = list.filter(function (r) { return r.rating; });
+    var sum = scores.reduce(function (s, r) { return s + r.rating; }, 0);
+    return { product: data.product, maxNo: data.maxNo, count: list.length,
+             average: scores.length ? Math.round(sum / scores.length * 100) / 100 : 0, reviews: list };
+  }
+
   /* 상품별 데이터 파일을 불러온다. 없거나 실패하면 아무것도 하지 않는다. */
   function loadData(no, done) {
     var s = document.createElement('script');
-    s.src = DATA_BASE + 'reviews_' + no + '.js';
+    // 카페24 이미지 서버는 하루(max-age=86400) 캐시한다. 주소 끝을 한 시간마다 바꿔 새 파일이 1시간 안에 퍼지게 한다.
+    s.src = DATA_BASE + 'reviews_' + no + '.js?v=' + Math.floor(Date.now() / 3600000);
     s.async = true;
     s.onload = function () {
       done((window.__SW_REVIEWS__ || {})[no] || null);
@@ -299,7 +432,13 @@
         if (!data || !data.reviews || !data.reviews.length) return;   // 없으면 기본 게시판 그대로
         state.data = data;
         build(board, data);
-      } catch (e) { /* 실패하면 기본 게시판이 그대로 보인다 */ }
+      } catch (e) { return; /* 실패하면 기본 게시판이 그대로 보인다 */ }
+      if (typeof data.maxNo !== 'number') return;             // 예전 형식 스냅샷
+      try {
+        loadLive(board, data.maxNo, function (extra) {
+          try { state.data = merge(state.data, extra); render(); } catch (e) { /* 스냅샷만 보인다 */ }
+        });
+      } catch (e) { /* 스냅샷만 보인다 */ }
     });
   }
 
