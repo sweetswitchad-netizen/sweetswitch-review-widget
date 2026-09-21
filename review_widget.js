@@ -70,7 +70,7 @@
   function css() {
     return '' +
     '#swReview{font:14px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#222;' +
-      'text-align:left;margin:0 0 40px}' +   /* 위쪽 여백은 #review 의 padding 이 준다 */
+      'text-align:left;margin:0 0 40px;max-width:100%}' +   /* 위쪽 여백은 #review 의 padding 이 준다 */
     '#swReview *{box-sizing:border-box}' +
     '#swReview .sw-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}' +
     '#swReview .sw-head h3{font-size:19px;margin:0}' +
@@ -79,7 +79,9 @@
     '#swReview .sw-score b{font-size:20px;color:#222}' +
     '#swReview .sw-score .sw-star{color:#ff4757;font-size:18px}' +
     '#swReview .sw-notice{margin:12px 0 18px;padding:9px 12px;background:#f7f8fa;border-radius:6px;font-size:12px;color:#555}' +
-    '#swReview .sw-strip{display:flex;gap:6px;margin-bottom:22px}' +
+    '#swReview .sw-strip{display:flex;gap:6px;margin-bottom:22px;overflow-x:auto;overflow-y:hidden;' +
+      '-webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-x:contain}' +
+    '#swReview .sw-strip::-webkit-scrollbar{display:none}' +
     '#swReview .sw-strip div{position:relative;flex:0 0 132px;height:132px;border-radius:8px;overflow:hidden;background:#f2f2f2;cursor:pointer}' +
     '#swReview .sw-strip img{width:100%;height:100%;object-fit:cover;display:block}' +
     '#swReview .sw-strip .sw-more{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;' +
@@ -111,7 +113,8 @@
     '.sw-panel header{padding:18px 20px 12px;border-bottom:1px solid #f0f0f0}' +
     '.sw-panel .sw-title{display:flex;justify-content:space-between;align-items:center}' +
     '.sw-panel .sw-title h4{margin:0;font-size:17px}' +
-    '.sw-panel .sw-x{border:0;background:none;font-size:22px;line-height:1;color:#888;cursor:pointer;padding:0 4px}' +
+    '.sw-panel .sw-x{border:0;background:none;font-size:24px;line-height:1;color:#666;cursor:pointer;' +
+      'width:40px;height:40px;margin:-8px -10px -8px 0;padding:0;flex:0 0 40px;font-family:inherit}' +
     '.sw-filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:12px}' +
     '.sw-chip{border:1px solid #ddd;background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;color:#444;cursor:pointer}' +
     '.sw-chip.on{background:#222;border-color:#222;color:#fff}' +
@@ -123,6 +126,9 @@
       'align-items:center;justify-content:center;padding:24px}' +
     '.sw-light.on{display:flex}' +
     '.sw-light img{max-width:100%;max-height:100%;object-fit:contain}' +
+    '.sw-light .sw-lx{position:absolute;top:8px;right:8px;top:calc(env(safe-area-inset-top,0px) + 8px);' +
+      'right:calc(env(safe-area-inset-right,0px) + 8px);width:44px;height:44px;padding:0;border:0;border-radius:50%;' +
+      'background:rgba(0,0,0,.55);color:#fff;font-size:26px;line-height:44px;cursor:pointer;font-family:inherit}' +
     '@media (max-width:640px){#swReview .sw-strip div{flex:0 0 104px;height:104px}' +
       '.sw-item{gap:12px}.sw-thumb{flex:0 0 76px;width:76px;height:76px}' +
       '.sw-modal{padding:10px}.sw-panel{max-height:94vh}.sw-panel header{padding:14px 14px 10px}' +
@@ -171,29 +177,44 @@
     $('.sw-dim').classList.add('on');
     $('.sw-modal').classList.add('on');
     document.body.style.overflow = 'hidden';
+    if (window.scrollX) window.scrollTo(0, window.scrollY);   // 가로로 밀려 있으면 되돌린다
   }
   /* 휴대폰에서 팝업을 보다 확대한 채 닫으면 화면이 확대된 그대로 남는다.
    * viewport 의 maximum-scale 을 잠깐 1 로 바꿨다 되돌리면 브라우저가 배율을 1 로 맞춘다. 확대 기능은 그대로 유지된다. */
+  var zooming = false;
   function resetZoom() {
     var vv = window.visualViewport;
-    if (!vv || vv.scale <= 1.01) return;
+    if (zooming || !vv || vv.scale <= 1.01) return;
     var meta = document.querySelector('meta[name="viewport"]');
     if (!meta) return;
     var orig = meta.getAttribute('content') || '';
     var fixed = /maximum-scale\s*=\s*[\d.]+/.test(orig)
       ? orig.replace(/maximum-scale\s*=\s*[\d.]+/, 'maximum-scale=1.0')
       : orig + (orig ? ', ' : '') + 'maximum-scale=1.0';
+    zooming = true;
     meta.setAttribute('content', fixed);
-    setTimeout(function () { meta.setAttribute('content', orig); }, 400);
+    setTimeout(function () { meta.setAttribute('content', orig); zooming = false; }, 400);
   }
   function closeModal() {
     var wasOpen = $('.sw-modal').classList.contains('on');
     $('.sw-dim').classList.remove('on');
     $('.sw-modal').classList.remove('on');
-    document.body.style.overflow = '';
+    if (!$('.sw-light').classList.contains('on')) document.body.style.overflow = '';
     if (wasOpen) resetZoom();
   }
-  function closeLight() { $('.sw-light').classList.remove('on'); }
+  /* 사진 확대. 목록 팝업 없이 상품 페이지에서 바로 열릴 수도 있다. */
+  function openLight(src) {
+    $('.sw-light img').src = src;
+    $('.sw-light').classList.add('on');
+    document.body.style.overflow = 'hidden';
+    if (window.scrollX) window.scrollTo(0, window.scrollY);   // 가로로 밀려 있으면 되돌린다
+  }
+  function closeLight() {
+    var wasOpen = $('.sw-light').classList.contains('on');
+    $('.sw-light').classList.remove('on');
+    if (!$('.sw-modal').classList.contains('on')) document.body.style.overflow = '';
+    if (wasOpen) resetZoom();
+  }
 
   /* 상품 페이지 쪽 위젯 내용. 실시간 글이 도착하면 다시 그린다. */
   function render() {
@@ -243,7 +264,8 @@
       '<button class="sw-chip" data-sort="high">별점 높은순</button>' +
       '<button class="sw-chip" data-sort="low">별점 낮은순</button>' +
       '</span></div></header><div class="sw-list"></div></div></div>' +
-      '<div class="sw-light"><img src="" alt=""></div>';
+      '<div class="sw-light"><button class="sw-lx" type="button" data-act="lclose" aria-label="닫기">&times;</button>' +
+      '<img src="" alt=""></div>';
     while (modal.firstChild) document.body.appendChild(modal.firstChild);
 
     // '후기 쓰기' 버튼은 기본 게시판 것을 그대로 가져와 쓴다 (원본을 옮기기 전에 복사해 둔다).
@@ -280,6 +302,7 @@
         var act = hit.dataset.act;
         if (act === 'all') { e.preventDefault(); openModal(); return; }
         if (act === 'close') { e.preventDefault(); closeModal(); return; }
+        if (act === 'lclose') { e.preventDefault(); closeLight(); return; }
         if (act === 'more') { e.preventDefault(); state.shown += PAGE; drawModal(); return; }
         if (act === 'photos') {
           e.preventDefault();
@@ -300,12 +323,15 @@
           return;
         }
       }
-      if (img) { $('.sw-light img').src = img.src; $('.sw-light').classList.add('on'); return; }
-      if (t.closest && (t.closest('.sw-dim') || t.closest('.sw-light'))) { closeLight(); closeModal(); }
+      if (img) { openLight(img.src); return; }
+      // 사진 확대를 눌렀으면 사진만 닫는다. 뒤에 있는 리뷰 목록은 그대로 둔다.
+      if (t.closest && t.closest('.sw-light')) { closeLight(); return; }
+      if (t.closest && t.closest('.sw-dim')) { closeModal(); }
     });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { closeLight(); closeModal(); }
+      if (e.key !== 'Escape') return;
+      if ($('.sw-light').classList.contains('on')) closeLight(); else closeModal();
     });
   }
 
