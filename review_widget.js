@@ -32,7 +32,11 @@
   var LIVE_MAX = 10;                          // 실시간으로 읽을 새 글 최대 수
   var LIVE_WAIT = 5000;                       // 실시간 읽기를 기다리는 최대 시간(ms)
 
-  var state = { data: null, filter: 'all', sort: 'new', shown: PAGE };
+  var state = { data: null, filter: 'all', sort: 'best', shown: PAGE };
+
+  /* 정렬은 두 가지뿐이다. 추천순(기본) = 별점 높은순, 같은 별점이면 최신순. */
+  function byBest(a, b) { return b.rating - a.rating || b.date.localeCompare(a.date); }
+  function byNew(a, b) { return b.date.localeCompare(a.date); }
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function esc(s) {
@@ -148,17 +152,12 @@
   }
 
   function picked() {
-    var f = state.filter, s = state.sort;
+    var f = state.filter;
     var list = state.data.reviews.filter(function (r) {
       if (f === 'photo') return !!r.photo;
-      if (f !== 'all') return r.rating === +f;
       return true;
     });
-    list.sort(function (a, b) {
-      if (s === 'high') return b.rating - a.rating || b.date.localeCompare(a.date);
-      if (s === 'low') return a.rating - b.rating || b.date.localeCompare(a.date);
-      return b.date.localeCompare(a.date);
-    });
+    list.sort(state.sort === 'new' ? byNew : byBest);
     return list;
   }
 
@@ -256,13 +255,9 @@
       '<div class="sw-filters">' +
       '<button class="sw-chip on" data-filter="all">전체</button>' +
       '<button class="sw-chip" data-filter="photo">사진 후기</button>' +
-      '<button class="sw-chip" data-filter="5">5점</button>' +
-      '<button class="sw-chip" data-filter="4">4점</button>' +
-      '<button class="sw-chip" data-filter="3">3점</button>' +
       '<span class="sw-sorts">' +
-      '<button class="sw-chip on" data-sort="new">최신순</button>' +
-      '<button class="sw-chip" data-sort="high">별점 높은순</button>' +
-      '<button class="sw-chip" data-sort="low">별점 낮은순</button>' +
+      '<button class="sw-chip on" data-sort="best">추천순</button>' +
+      '<button class="sw-chip" data-sort="new">최신순</button>' +
       '</span></div></header><div class="sw-list"></div></div></div>' +
       '<div class="sw-light"><button class="sw-lx" type="button" data-act="lclose" aria-label="닫기">&times;</button>' +
       '<img src="" alt=""></div>';
@@ -425,7 +420,7 @@
     var have = {}, list = data.reviews.slice();
     list.forEach(function (r) { have[r.no] = 1; });
     extra.forEach(function (r) { if (!have[r.no]) { have[r.no] = 1; list.push(r); } });
-    list.sort(function (a, b) { return b.date.localeCompare(a.date); });
+    list.sort(byBest);
     var scores = list.filter(function (r) { return r.rating; });
     var sum = scores.reduce(function (s, r) { return s + r.rating; }, 0);
     return { product: data.product, maxNo: data.maxNo, count: list.length,
@@ -456,6 +451,7 @@
     loadData(no, function (data) {
       try {
         if (!data || !data.reviews || !data.reviews.length) return;   // 없으면 기본 게시판 그대로
+        data.reviews.sort(byBest);        // 상품 페이지에 처음 보이는 것도 추천순
         state.data = data;
         build(board, data);
       } catch (e) { return; /* 실패하면 기본 게시판이 그대로 보인다 */ }
