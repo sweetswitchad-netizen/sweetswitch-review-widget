@@ -32,7 +32,20 @@
   var LIVE_MAX = 10;                          // 실시간으로 읽을 새 글 최대 수
   var LIVE_WAIT = 5000;                       // 실시간 읽기를 기다리는 최대 시간(ms)
 
-  var state = { data: null, filter: 'all', sort: 'best', shown: PAGE };
+  /* 세트 상품: 구성품 단품의 스냅샷을 모아 탭으로 나눠 보여준다 (10-13 사용자 결정, A안).
+   * 탭 이름엔 용량을 빼고, 각 리뷰 줄에 그 리뷰가 달린 단품 이름(용량 포함)을 적는다.
+   * 세트 자체 게시판 글(스냅샷 reviews_{세트번호}.js 가 있으면 그것 + 실시간)은 '세트 구매' 탭에 모은다. */
+  var SETS = {
+    21: { notice: '이 상품의 구성품을 단품으로 구매한 고객의 후기를 함께 보여드립니다.',
+          tabs: [{ key: 'shampoo', label: '플러스 헤어샴푸', products: [9, 12] },
+                 { key: 'treat', label: '트리트먼트', products: [15] },
+                 { key: 'tonic', label: '플러스 헤어토닉', products: [16] }] }
+  };
+  var PNAME = { 9: '플러스 헤어 샴푸 1000ml', 12: '플러스 헤어 샴푸 250ml',
+                15: '극손상 트리트먼트 200ml', 16: '플러스 헤어토닉 60ml' };
+  var OWN_TAB = { key: 'own', label: '세트 구매' };
+
+  var state = { data: null, filter: 'all', sort: 'best', shown: PAGE, tab: 'all' };
 
   /* 정렬은 두 가지뿐이다. 추천순(기본) = 별점 높은순, 같은 별점이면 최신순. */
   function byBest(a, b) { return b.rating - a.rating || b.date.localeCompare(a.date); }
@@ -100,6 +113,13 @@
     '.sw-date{font-size:13px;color:#8e8e8e}' +
     '.sw-tagline{font-size:13px;color:#8e8e8e;margin:4px 0 8px}' +
     '.sw-body{white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.6}' +
+    '.sw-pname{color:#555}' +
+    '.sw-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 0 14px;padding-bottom:2px}' +
+    '.sw-tabs::-webkit-scrollbar{display:none}' +
+    '.sw-tabs .sw-chip{flex:none}' +
+    '.sw-tabs .sw-chip small{margin-left:4px;opacity:.7}' +
+    '.sw-tabs .sw-tab{border-radius:6px}' +
+    '.sw-panel .sw-tabs{margin:12px 0 0}' +
     '.sw-thumb{flex:0 0 108px;width:108px;height:108px;border-radius:8px;overflow:hidden;background:#f2f2f2;cursor:pointer}' +
     '.sw-thumb img{width:100%;height:100%;object-fit:cover;display:block;max-width:none}' +
     '.sw-btn{display:block;width:100%;padding:14px;margin-top:18px;background:#fff;border:1px solid #ddd;' +
@@ -147,13 +167,33 @@
       (r.rating ? '<span class="sw-rate">' + stars(r.rating) + r.rating + '</span>' : '') +
       '<span class="sw-id">' + esc(r.writer) + '</span>' +
       '<span class="sw-date">· ' + fmtDate(r.date) + '</span></div>' +
-      '<div class="sw-tagline">' + (r.source === 'shop' ? SHOP : '네이버 스마트스토어') + ' · ' + esc(r.kind) + '</div>' +
+      '<div class="sw-tagline">' + (r.source === 'shop' ? SHOP : '네이버 스마트스토어') + ' · ' + esc(r.kind) +
+      (r.pname ? ' · <span class="sw-pname">' + esc(r.pname) + '</span>' : '') + '</div>' +
       '<div class="sw-body">' + esc(r.text) + '</div></div>' + thumb + '</div>';
+  }
+
+  /* 세트 상품이면 지금 고른 탭의 리뷰만 */
+  function inTab() {
+    var t = state.tab;
+    return state.data.reviews.filter(function (r) { return t === 'all' || r.tab === t; });
+  }
+  function tabsHtml() {
+    var set = state.data.set;
+    if (!set) return '';
+    var all = state.data.reviews;
+    var tabs = set.tabs.slice();
+    if (all.some(function (r) { return r.tab === OWN_TAB.key; })) tabs.push(OWN_TAB);
+    return '<div class="sw-tabs">' +
+      [{ key: 'all', label: '전체' }].concat(tabs).map(function (t) {
+        var n = t.key === 'all' ? all.length : all.filter(function (r) { return r.tab === t.key; }).length;
+        return '<button class="sw-chip sw-tab' + (state.tab === t.key ? ' on' : '') + '" data-tab="' + t.key + '">' +
+          esc(t.label) + '<small>' + n.toLocaleString() + '</small></button>';
+      }).join('') + '</div>';
   }
 
   function picked() {
     var f = state.filter;
-    var list = state.data.reviews.filter(function (r) {
+    var list = inTab().filter(function (r) {
       if (f === 'photo') return !!r.photo;
       return true;
     });
@@ -164,6 +204,7 @@
   function drawModal() {
     var list = picked(), box = $('.sw-list');
     $('.sw-panel .sw-title h4').textContent = '리뷰 ' + list.length;
+    $('.sw-mtabs').innerHTML = tabsHtml();
     if (!list.length) { box.innerHTML = '<p class="sw-empty">해당하는 후기가 없습니다.</p>'; return; }
     box.innerHTML = list.slice(0, state.shown).map(itemHtml).join('') +
       (list.length > state.shown
@@ -217,8 +258,8 @@
 
   /* 상품 페이지 쪽 위젯 내용. 실시간 글이 도착하면 다시 그린다. */
   function render() {
-    var d = state.data, wrap = state.wrap;
-    var photos = d.reviews.filter(function (r) { return r.photo; });
+    var d = state.data, wrap = state.wrap, list = inTab();
+    var photos = list.filter(function (r) { return r.photo; });
 
     var cells = photos.slice(0, STRIP + 1).map(function (r, i) {
       var img = '<img src="' + esc(r.photo) + '" alt="" loading="lazy">';
@@ -230,10 +271,11 @@
     wrap.innerHTML =
       '<div class="sw-head"><h3>리뷰 ' + d.count + '</h3><span class="sw-std">후기 제공 기준</span></div>' +
       '<div class="sw-score"><span class="sw-star">★</span><b>' + d.average.toFixed(2) + '</b></div>' +
-      '<div class="sw-notice">' + NOTICE + '</div>' +
+      '<div class="sw-notice">' + NOTICE + (d.set ? '<br>' + esc(d.set.notice) : '') + '</div>' +
+      tabsHtml() +
       (photos.length ? '<div class="sw-strip">' + cells + '</div>' : '') +
-      d.reviews.slice(0, HEAD).map(itemHtml).join('') +
-      '<button class="sw-btn" data-act="all">리뷰 전체보기 (' + d.count + ')</button>';
+      list.slice(0, HEAD).map(itemHtml).join('') +
+      '<button class="sw-btn" data-act="all">리뷰 전체보기 (' + list.length + ')</button>';
     if (state.write) wrap.appendChild(state.write);
     if ($('.sw-modal.on')) drawModal();
   }
@@ -252,6 +294,7 @@
       '<div class="sw-dim"></div>' +
       '<div class="sw-modal"><div class="sw-panel"><header>' +
       '<div class="sw-title"><h4>리뷰</h4><button class="sw-x" data-act="close">&times;</button></div>' +
+      '<div class="sw-mtabs"></div>' +
       '<div class="sw-filters">' +
       '<button class="sw-chip on" data-filter="all">전체</button>' +
       '<button class="sw-chip" data-filter="photo">사진 후기</button>' +
@@ -291,10 +334,17 @@
     document.addEventListener('click', function (e) {
       var t = e.target;
       var img = t.closest && t.closest('#swReview img, .sw-list img');
-      var hit = t.closest && t.closest('[data-act],[data-filter],[data-sort]');
+      var hit = t.closest && t.closest('[data-act],[data-filter],[data-sort],[data-tab]');
 
       if (hit) {
         var act = hit.dataset.act;
+        if (hit.dataset.tab) {          // 세트 탭: 상품 페이지와 팝업이 같은 탭을 쓴다
+          e.preventDefault();
+          state.tab = hit.dataset.tab;
+          state.shown = PAGE;
+          render();                     // 팝업이 열려 있으면 render 가 팝업도 다시 그린다
+          return;
+        }
         if (act === 'all') { e.preventDefault(); openModal(); return; }
         if (act === 'close') { e.preventDefault(); closeModal(); return; }
         if (act === 'lclose') { e.preventDefault(); closeLight(); return; }
@@ -419,12 +469,46 @@
   function merge(data, extra) {
     var have = {}, list = data.reviews.slice();
     list.forEach(function (r) { have[r.no] = 1; });
-    extra.forEach(function (r) { if (!have[r.no]) { have[r.no] = 1; list.push(r); } });
+    extra.forEach(function (r) {
+      if (have[r.no]) return;
+      have[r.no] = 1;
+      if (data.set && !r.tab) r.tab = OWN_TAB.key;   // 세트 페이지 게시판의 새 글 = 세트 구매 후기
+      list.push(r);
+    });
     list.sort(byBest);
     var scores = list.filter(function (r) { return r.rating; });
     var sum = scores.reduce(function (s, r) { return s + r.rating; }, 0);
-    return { product: data.product, maxNo: data.maxNo, count: list.length,
+    return { product: data.product, maxNo: data.maxNo, count: list.length, set: data.set,
              average: scores.length ? Math.round(sum / scores.length * 100) / 100 : 0, reviews: list };
+  }
+
+  /* 세트 상품: 세트 자체 스냅샷(없어도 됨) + 구성품 스냅샷을 모두 받아 하나로 합친다.
+   * 구성품 리뷰엔 탭(r.tab)과 단품 이름(r.pname)을 붙인다. 실시간 기준 글번호는 세트 자체 스냅샷의 것. */
+  function loadSet(no, set, done) {
+    var jobs = [{ no: no, tab: OWN_TAB.key }];
+    set.tabs.forEach(function (t) {
+      t.products.forEach(function (p) { jobs.push({ no: p, tab: t.key, pname: PNAME[p] }); });
+    });
+    var got = {}, left = jobs.length;
+    jobs.forEach(function (j) {
+      loadData(j.no, function (d) {
+        got[j.no] = d;
+        if (--left) return;
+        var own = got[no], reviews = [];
+        jobs.forEach(function (k) {
+          var d2 = got[k.no];
+          if (!d2 || !d2.reviews) return;
+          d2.reviews.forEach(function (r) {
+            r.tab = k.tab;
+            if (k.pname) r.pname = k.pname;
+            reviews.push(r);
+          });
+        });
+        if (!reviews.length) { done(null); return; }
+        done(merge({ product: +no, maxNo: own && typeof own.maxNo === 'number' ? own.maxNo : 0,
+                     set: set, reviews: [] }, reviews));
+      });
+    });
   }
 
   /* 상품별 데이터 파일을 불러온다. 없거나 실패하면 아무것도 하지 않는다. */
@@ -448,7 +532,7 @@
       if (!board || !no) return;
     } catch (e) { return; }
 
-    loadData(no, function (data) {
+    (SETS[no] ? function (cb) { loadSet(no, SETS[no], cb); } : function (cb) { loadData(no, cb); })(function (data) {
       try {
         if (!data || !data.reviews || !data.reviews.length) return;   // 없으면 기본 게시판 그대로
         data.reviews.sort(byBest);        // 상품 페이지에 처음 보이는 것도 추천순
