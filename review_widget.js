@@ -277,6 +277,12 @@
       list.slice(0, HEAD).map(itemHtml).join('') +
       '<button class="sw-btn" data-act="all">리뷰 전체보기 (' + list.length + ')</button>';
     if (state.write) wrap.appendChild(state.write);
+    // 세트 상품은 자기 게시판 글이 거의 없어 '상품후기 0' 으로 나온다. 상세 탭 숫자를 위젯 합계로 맞춘다.
+    // (이 페이지 화면만 바꾼다. 상품 목록·검색 등 다른 화면의 후기 수는 카페24 값 그대로다.)
+    if (d.set) {
+      [].slice.call(document.querySelectorAll('a[href="#review"] > span, a[href="#prdReview"] > span'))
+        .forEach(function (s) { if (/^\s*\d[\d,]*\s*$/.test(s.textContent)) s.textContent = d.count.toLocaleString(); });
+    }
     if ($('.sw-modal.on')) drawModal();
   }
 
