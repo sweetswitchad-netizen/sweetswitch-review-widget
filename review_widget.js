@@ -63,7 +63,8 @@
   /* 이 페이지가 상품 상세인지, 후기 영역이 어디인지 */
   function findBoard() {
     if (location.pathname.indexOf('/product/detail.html') === -1 &&
-        !/\/product\//.test(location.pathname)) return null;
+        !/\/product\//.test(location.pathname) &&
+        !/^\/surl\/P\/\d+/.test(location.pathname)) return null;
     return document.getElementById('prdReview') ||
            $('.xans-product-review') ||
            $('[id*="prdReview"]');
@@ -72,11 +73,14 @@
   /* 상품번호. 카페24는 주소를 두 가지로 쓴다.
    *   /product/detail.html?product_no=13
    *   /product/{상품명}/13/category/1/display/2/      ← 메인·목록에서 눌러 들어오면 이쪽
-   * 그래서 물음표 뒤만 보면 안 된다. 셋 다 시도한다. */
+   *   /surl/P/13                                      ← 단축주소. 넘어가지 않고 이 주소로 상세를 띄운다 (10-14 확인)
+   * 그래서 물음표 뒤만 보면 안 된다. 전부 시도한다. */
   function productNo() {
     var m = location.search.match(/[?&]product_no=(\d+)/);
     if (m) return m[1];
     m = location.pathname.match(/\/product\/[^/]+\/(\d+)(?:\/|$)/);
+    if (m) return m[1];
+    m = location.pathname.match(/^\/surl\/P\/(\d+)(?:\/|$)/);
     if (m) return m[1];
     var meta = $('meta[property="product:retailer_item_id"]');
     if (meta && /^\d+$/.test(meta.content)) return meta.content;
